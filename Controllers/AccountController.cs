@@ -13,7 +13,7 @@ using Backend.DTO;
 namespace Backend.Controllers
 {
     [ApiController]
-    [Route("[controller]/[action]")]
+    [Route("api/[controller]/[action]")]
     public class AccountController : Controller
     {
         private readonly TodoContext context;
@@ -111,8 +111,13 @@ namespace Backend.Controllers
 
                         var jwtString = new JwtSecurityTokenHandler().WriteToken(jwtObject);
 
-                        return StatusCode(StatusCodes.Status200OK, jwtString);
-                        Response.Cookies.Append("x", jwtString);
+                        //return StatusCode(StatusCodes.Status200OK, jwtString);
+                        Response.Cookies.Append("token", jwtString, new CookieOptions()
+                        {
+                            HttpOnly = true,
+                        });
+
+                        return Ok();
                     }
 
                 }
@@ -137,7 +142,6 @@ namespace Backend.Controllers
 
         private SigningCredentials CreateSigningCredentials()
         {
-            Console.WriteLine("inside credentials");
             return new SigningCredentials(
                             new SymmetricSecurityKey(
                                 System.Text.Encoding.UTF8.GetBytes(
@@ -150,21 +154,11 @@ namespace Backend.Controllers
 
         private List<Claim> CreateClaims(IdentityUser user)
         {
-            try
-            {
-                Console.WriteLine("in claims");
-                List<Claim> claims = new List<Claim>() {
+            List<Claim> claims = new List<Claim>() {
                     new Claim(ClaimTypes.Name, user.UserName!)
                 };
 
-                return claims;
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine("problem with claims", e);
-                throw;
-            };
-
+            return claims;
         }
     }
 }
