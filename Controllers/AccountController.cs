@@ -97,17 +97,9 @@ namespace Backend.Controllers
 
                     else
                     {
-                        var signingCredentials = new SigningCredentials(
-                            new SymmetricSecurityKey(
-                                System.Text.Encoding.UTF8.GetBytes(
-                                    _configuration["JTW:SigningKey"]!
-                                )
-                            ),
-                            SecurityAlgorithms.HmacSha256
-                        );
+                        var signingCredentials = CreateSigningCredentials();
 
-                        var claims = new List<Claim>();
-                        claims.Add(new Claim(ClaimTypes.Name, user.UserName!));
+                        var claims = CreateClaims(user);
 
                         var jwtObject = new JwtSecurityToken(
                             issuer: _configuration["JWT:Issuer"],
@@ -120,11 +112,13 @@ namespace Backend.Controllers
                         var jwtString = new JwtSecurityTokenHandler().WriteToken(jwtObject);
 
                         return StatusCode(StatusCodes.Status200OK, jwtString);
+                        Response.Cookies.Append("x", jwtString);
                     }
 
                 }
                 else
                 {
+                    Console.WriteLine("in auth");
                     var details = new ValidationProblemDetails(ModelState);
                     details.Status = StatusCodes.Status400BadRequest;
                     return new BadRequestObjectResult(details);
@@ -139,6 +133,38 @@ namespace Backend.Controllers
                     StatusCodes.Status401Unauthorized, exceptionDetails
                 );
             }
+        }
+
+        private SigningCredentials CreateSigningCredentials()
+        {
+            Console.WriteLine("inside credentials");
+            return new SigningCredentials(
+                            new SymmetricSecurityKey(
+                                System.Text.Encoding.UTF8.GetBytes(
+                                    _configuration["JWT:SigningKey"]!
+                                )
+                            ),
+                            SecurityAlgorithms.HmacSha256
+                        );
+        }
+
+        private List<Claim> CreateClaims(IdentityUser user)
+        {
+            try
+            {
+                Console.WriteLine("in claims");
+                List<Claim> claims = new List<Claim>() {
+                    new Claim(ClaimTypes.Name, user.UserName!)
+                };
+
+                return claims;
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine("problem with claims", e);
+                throw;
+            };
+
         }
     }
 }
