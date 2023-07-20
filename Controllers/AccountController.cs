@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Linq.Expressions;
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics;
+using System.Security.Cryptography;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
@@ -109,15 +110,21 @@ namespace Backend.Controllers
                             signingCredentials: signingCredentials
                         );
 
-                        var jwtString = new JwtSecurityTokenHandler().WriteToken(jwtObject);
+                        var accessToken = new JwtSecurityTokenHandler().WriteToken(jwtObject);
+                        var refreshToken = GenerateRefreshToken();
 
-                        //return StatusCode(StatusCodes.Status200OK, jwtString);
-                        Response.Cookies.Append("token", jwtString, new CookieOptions()
+                        user.RefreshToken = refreshToken;
+                        user.RefreshTokenExpiryTime = DateTime.Now.AddSeconds(20);
+
+                        await _userManager.UpdateAsync(user);
+
+                        Response.Cookies.Append("refresh-token", refreshToken, new CookieOptions()
                         {
                             HttpOnly = true,
+                            SameSite = SameSiteMode.None
                         });
 
-                        return Ok();
+                        return StatusCode(StatusCodes.Status200OK, accessToken);
                     }
 
                 }
@@ -159,6 +166,16 @@ namespace Backend.Controllers
                 };
 
             return claims;
+        }
+
+        private string GenerateRefreshToken()
+        {
+            var randomNumber = new byte[32];
+            using (var numGen = RandomNumberGenerator.Create())
+            {
+                numGen.GetBytes(randomNumber);
+                return Convert.ToBase64String(randomNumber);
+            }
         }
     }
 }
