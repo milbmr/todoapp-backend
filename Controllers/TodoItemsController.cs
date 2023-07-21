@@ -8,10 +8,11 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Backend.Controllers
 {
-
+    [Authorize]
     [ApiController]
     [Route("api/[controller]")]
     public class TodoItemsController : ControllerBase
@@ -23,10 +24,13 @@ namespace Backend.Controllers
 
         private readonly SignInManager<TodoUser> _signInManager;
 
-        public TodoItemsController(ILogger<TodoItemsController> logger, TodoContext context,
+        public TodoItemsController(
+            ILogger<TodoItemsController> logger,
+            TodoContext context,
             IConfiguration configuration,
             UserManager<TodoUser> userManager,
-            SignInManager<TodoUser> signInManager)
+            SignInManager<TodoUser> signInManager
+        )
         {
             this.context = context;
             _configuration = configuration;
@@ -38,7 +42,13 @@ namespace Backend.Controllers
         [HttpGet("todos")]
         public async Task<ActionResult<IEnumerable<TodoItem>>> GetTodoList()
         {
-            var todos = await context.Todos.Select(c => c).ToListAsync();
+            if (!Request.Headers.TryGetValue("user", out var userName))
+                BadRequest("Invalid todo fetch");
+
+            var user = await _userManager.Users.FirstOrDefaultAsync(x => x.UserName == userName);
+            var todos = await context.Todos.Where(t => t.User.Id == user!.Id).ToListAsync();
+
+            if(user != null || todos != null) BadRequest("no data");
 
             return todos;
         }
@@ -46,11 +56,7 @@ namespace Backend.Controllers
         [HttpPost("todos")]
         public async Task<ActionResult<long>> AddTodo(TodoItem todo)
         {
-            var item = new TodoItem()
-            {
-                Todo = todo.Todo,
-                IsComplete = todo.IsComplete
-            };
+            var item = new TodoItem() { Todo = todo.Todo, IsComplete = todo.IsComplete };
 
             context.Todos.Add(item);
             await context.SaveChangesAsync();
@@ -71,6 +77,5 @@ namespace Backend.Controllers
 
             return todo!.TodoItemId;
         }
-
     }
 }

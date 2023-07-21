@@ -145,7 +145,7 @@ public class AccountController : Controller
             !Request.Headers.TryGetValue("user", out var userName)
             && !Request.Cookies.TryGetValue("refresh-token", out refreshToken)
         )
-            BadRequest();
+            BadRequest("refetsh error");
 
         var user = await _userManager.Users.FirstOrDefaultAsync(x => x.UserName == userName);
 
@@ -165,9 +165,10 @@ public class AccountController : Controller
 
         Response.Cookies.Append(
             "refresh-token",
-            newAccessToken,
-            new CookieOptions() { HttpOnly = true, SameSite = SameSiteMode.None }
+            newAccessToken
         );
+
+        Response.Headers.Add("Access-Control-Allow-Credentials", "true");
 
         return Ok(new { accessToken = newAccessToken, userName = user.UserName });
     }
@@ -224,7 +225,7 @@ public class AccountController : Controller
             issuer: _configuration["JWT:Issuer"],
             audience: _configuration["JWT:Audience"],
             claims: claims,
-            expires: DateTime.Now.AddSeconds(300),
+            expires: DateTime.Now.AddSeconds(10),
             signingCredentials: signingCredentials
         );
 

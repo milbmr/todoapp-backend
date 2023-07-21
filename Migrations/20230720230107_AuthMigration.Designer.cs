@@ -3,6 +3,7 @@ using System;
 using Backend.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Backend.Migrations
 {
     [DbContext(typeof(TodoContext))]
-    partial class TodoContextModelSnapshot : ModelSnapshot
+    [Migration("20230720230107_AuthMigration")]
+    partial class AuthMigration
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -31,12 +34,15 @@ namespace Backend.Migrations
                     b.Property<string>("Todo")
                         .HasColumnType("longtext");
 
-                    b.Property<string>("TodoUserId")
+                    b.Property<long>("TodoUserId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("UserId")
                         .HasColumnType("varchar(255)");
 
                     b.HasKey("TodoItemId");
 
-                    b.HasIndex("TodoUserId");
+                    b.HasIndex("UserId");
 
                     b.ToTable("Todos");
                 });
@@ -243,8 +249,7 @@ namespace Backend.Migrations
                 {
                     b.HasOne("Backend.Models.TodoUser", "User")
                         .WithMany("TodoItems")
-                        .HasForeignKey("TodoUserId")
-                        .OnDelete(DeleteBehavior.Cascade);
+                        .HasForeignKey("UserId");
 
                     b.Navigation("User");
                 });
