@@ -7,7 +7,7 @@ namespace Backend.DTO
 {
     public class TodoItemDto
     {
-        public long Id { get; set; }
+        public string? Id { get; set; }
         public string? Todo { get; set; }
         public bool IsComplete { get; set; }
     }

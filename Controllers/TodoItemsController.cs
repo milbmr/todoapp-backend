@@ -9,6 +9,7 @@ using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
+using Backend.DTO;
 
 namespace Backend.Controllers
 {
@@ -46,17 +47,25 @@ namespace Backend.Controllers
                 BadRequest("Invalid todo fetch");
 
             var user = await _userManager.Users.FirstOrDefaultAsync(x => x.UserName == userName);
-            var todos = await context.Todos.Where(t => t.User.Id == user!.Id).ToListAsync();
+            var todos = await context.Todos.Where(t => t.TodoUserId == user!.Id).ToListAsync();
 
-            if(user != null || todos != null) BadRequest("no data");
+            if (user != null || todos != null)
+                BadRequest("no data");
 
-            return todos;
+            return Ok(new {GetTodoList = user!.TodoItems});
         }
 
         [HttpPost("todos")]
-        public async Task<ActionResult<long>> AddTodo(TodoItem todo)
+        public async Task<ActionResult<long>> AddTodo(TodoItemDto todo)
         {
-            var item = new TodoItem() { Todo = todo.Todo, IsComplete = todo.IsComplete };
+            var user = await _userManager.Users.FirstOrDefaultAsync(x => x.Id == todo.Id);
+            var item = new TodoItem()
+            {
+                Todo = todo.Todo,
+                IsComplete = todo.IsComplete,
+                TodoUserId = todo.Id,
+                User = user!
+            };
 
             context.Todos.Add(item);
             await context.SaveChangesAsync();

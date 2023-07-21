@@ -3,10 +3,16 @@ using Backend.Models;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.AspNetCore.Identity;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+builder.Services
+    .AddControllers()
+    .AddJsonOptions(
+        options => options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.Preserve
+    );
+
 builder.Services.AddDbContext<TodoContext>(options =>
 {
     options.UseMySQL(builder.Configuration.GetConnectionString("todo")!);
@@ -58,6 +64,8 @@ builder.Services
             ValidateAudience = true,
             ValidAudience = builder.Configuration["JWT:Audience"],
             ValidateIssuerSigningKey = true,
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.Zero,
             IssuerSigningKey = new SymmetricSecurityKey(
                 System.Text.Encoding.UTF8.GetBytes(builder.Configuration["JWT:SigningKey"]!)
             )

@@ -106,15 +106,17 @@ public class AccountController : Controller
 
                     await _userManager.UpdateAsync(user);
 
-                    Response.Cookies.Append(
-                        "refresh-token",
-                        refreshToken,
-                        new CookieOptions() { HttpOnly = true, SameSite = SameSiteMode.None }
-                    );
+                    var options = new CookieOptions()
+                    {
+                        HttpOnly = true,
+                        SameSite = SameSiteMode.None
+                    };
+
+                    Response.Cookies.Append("refresh-token", refreshToken, options);
 
                     return StatusCode(
                         StatusCodes.Status200OK,
-                        new { accessToken, user = user.UserName }
+                        new { accessToken, user = user.Id }
                     );
                 }
             }
@@ -163,10 +165,9 @@ public class AccountController : Controller
 
         await _userManager.UpdateAsync(user);
 
-        Response.Cookies.Append(
-            "refresh-token",
-            newAccessToken
-        );
+        var options = new CookieOptions() { HttpOnly = true, SameSite = SameSiteMode.None };
+
+        Response.Cookies.Append("refresh-token", newAccessToken, options);
 
         Response.Headers.Add("Access-Control-Allow-Credentials", "true");
 
@@ -225,7 +226,7 @@ public class AccountController : Controller
             issuer: _configuration["JWT:Issuer"],
             audience: _configuration["JWT:Audience"],
             claims: claims,
-            expires: DateTime.Now.AddSeconds(10),
+            expires: DateTime.UtcNow.AddSeconds(30),
             signingCredentials: signingCredentials
         );
 
