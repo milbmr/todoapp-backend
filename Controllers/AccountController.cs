@@ -104,7 +104,7 @@ public class AccountController : Controller
                     user.RefreshToken = refreshToken;
                     user.RefreshTokenExpiryTime = DateTime.Now.AddSeconds(20);
 
-                    await _userManager.UpdateAsync(user);
+                    await context.SaveChangesAsync();
 
                     var options = new CookieOptions()
                     {
@@ -114,10 +114,7 @@ public class AccountController : Controller
 
                     Response.Cookies.Append("refresh-token", refreshToken, options);
 
-                    return StatusCode(
-                        StatusCodes.Status200OK,
-                        new { accessToken, user = user.Id }
-                    );
+                    return StatusCode(StatusCodes.Status200OK, new { accessToken, user = user.Id });
                 }
             }
             else
@@ -142,32 +139,49 @@ public class AccountController : Controller
     [HttpPost]
     public async Task<IActionResult> Refresh()
     {
-        var refreshToken = "";
+        var httpOnlyCookie = Request.Cookies["refresh-token"];
         if (
             !Request.Headers.TryGetValue("user", out var userName)
-            && !Request.Cookies.TryGetValue("refresh-token", out refreshToken)
+            && httpOnlyCookie == ""
         )
-            BadRequest("refetsh error");
+            return BadRequest("refetsh error");
 
         var user = await _userManager.Users.FirstOrDefaultAsync(x => x.UserName == userName);
 
+        Console.WriteLine("cookie token {0}",httpOnlyCookie);
+
         if (
-            user == null
-            || user.RefreshToken != refreshToken
-            || user.RefreshTokenExpiryTime <= DateTime.Now
+            (user == null)
+            || (user.RefreshToken != httpOnlyCookie)
+            || (user.RefreshTokenExpiryTime <= DateTime.Now)
         )
-            BadRequest("invalid refresh request");
+        {
+            Console.WriteLine(
+                "refresh user {0}, refresh now {1}, user {2}",
+                user.RefreshToken != httpOnlyCookie,
+                user.RefreshTokenExpiryTime <= DateTime.Now,
+                user == null
+            );
+            return BadRequest("invalid refresh request");
+        }
+
+        Console.WriteLine(
+            "refresh user {0}, refresh now {1}, user {2}",
+            user.RefreshToken != httpOnlyCookie,
+            user.RefreshTokenExpiryTime <= DateTime.Now,
+            user == null
+        );
 
         var newAccessToken = GenerateAccessToken(user!);
         var newRefreshToken = GenerateRefreshToken();
 
         user!.RefreshToken = newRefreshToken;
 
-        await _userManager.UpdateAsync(user);
+        await context.SaveChangesAsync();
 
         var options = new CookieOptions() { HttpOnly = true, SameSite = SameSiteMode.None };
 
-        Response.Cookies.Append("refresh-token", newAccessToken, options);
+        Response.Cookies.Append("refresh-token", newRefreshToken, options);
 
         Response.Headers.Add("Access-Control-Allow-Credentials", "true");
 
@@ -178,12 +192,12 @@ public class AccountController : Controller
     public async Task<IActionResult> Revoke()
     {
         if (!Request.Headers.TryGetValue("user", out var userName))
-            BadRequest();
+            return BadRequest();
 
         var user = await _userManager.Users.FirstOrDefaultAsync(x => x.UserName == userName);
 
         if (user == null)
-            BadRequest();
+            return BadRequest();
 
         user!.RefreshToken = null;
         await _userManager.UpdateAsync(user);
