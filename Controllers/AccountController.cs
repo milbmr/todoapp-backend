@@ -48,9 +48,11 @@ public class AccountController : Controller
         {
             if (ModelState.IsValid)
             {
-                var newUser = new TodoUser();
-                newUser.UserName = input.UserName;
-                newUser.Email = input.Email;
+                var newUser = new TodoUser
+                {
+                    UserName = input.UserName,
+                    Email = input.Email
+                };
                 var result = await _userManager.CreateAsync(newUser, input.Password!);
                 if (result.Succeeded)
                 {
@@ -149,19 +151,11 @@ public class AccountController : Controller
         Console.WriteLine("cookie token {0}", httpOnlyCookie);
 
         if (
-            (user == null)
-            || (user.RefreshToken != httpOnlyCookie)
-            || (user.RefreshTokenExpiryTime <= DateTime.Now)
+            user == null
+            || user.RefreshToken != httpOnlyCookie
+            || user.RefreshTokenExpiryTime <= DateTime.Now
         )
-        {
-            Console.WriteLine(
-                "refresh user {0}, refresh now {1}, user {2}",
-                user.RefreshToken != httpOnlyCookie,
-                user.RefreshTokenExpiryTime <= DateTime.Now,
-                user == null
-            );
             return BadRequest("invalid refresh request");
-        }
 
         Console.WriteLine(
             "refresh user {0}, refresh now {1}, user {2}",
@@ -189,15 +183,17 @@ public class AccountController : Controller
     [HttpPost, Authorize]
     public async Task<IActionResult> Revoke()
     {
-        var accessToken = Request.Headers["Authorization"].ToString().Replace("Bearer ", string.Empty);
+        var accessToken = Request.Headers["Authorization"]
+            .ToString()
+            .Replace("Bearer ", string.Empty);
         if (accessToken == null || accessToken.Length == 0)
             return BadRequest("Invalid todo fetch");
 
-        Console.WriteLine("token mimi {0}", accessToken);    
+        Console.WriteLine("token mimi {0}", accessToken);
 
         var token = GenratePrincipalFromToken(accessToken!);
 
-        //var userId = User.FindFirst("Id")!.Value;   
+        //var userId = User.FindFirst("Id")!.Value;
 
         var user = await _userManager.Users.FirstOrDefaultAsync(
             x => x.UserName == token.FindFirst("Id")!.Value
