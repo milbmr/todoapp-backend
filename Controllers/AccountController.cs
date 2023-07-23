@@ -11,6 +11,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using Backend.DTO;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.IdentityModel.Logging;
 
 namespace Backend.Controllers;
 
@@ -140,15 +141,12 @@ public class AccountController : Controller
     public async Task<IActionResult> Refresh()
     {
         var httpOnlyCookie = Request.Cookies["refresh-token"];
-        if (
-            !Request.Headers.TryGetValue("user", out var userName)
-            && httpOnlyCookie == ""
-        )
+        if (!Request.Headers.TryGetValue("user", out var userName) && httpOnlyCookie == "")
             return BadRequest("refetsh error");
 
         var user = await _userManager.Users.FirstOrDefaultAsync(x => x.UserName == userName);
 
-        Console.WriteLine("cookie token {0}",httpOnlyCookie);
+        Console.WriteLine("cookie token {0}", httpOnlyCookie);
 
         if (
             (user == null)
@@ -191,10 +189,19 @@ public class AccountController : Controller
     [HttpPost, Authorize]
     public async Task<IActionResult> Revoke()
     {
-        if (!Request.Headers.TryGetValue("user", out var userName))
-            return BadRequest();
+        var accessToken = Request.Headers["Authorization"].ToString().Replace("Bearer ", string.Empty);
+        if (accessToken == null || accessToken.Length == 0)
+            return BadRequest("Invalid todo fetch");
 
-        var user = await _userManager.Users.FirstOrDefaultAsync(x => x.UserName == userName);
+        Console.WriteLine("token mimi {0}", accessToken);    
+
+        var token = GenratePrincipalFromToken(accessToken!);
+
+        //var userId = User.FindFirst("Id")!.Value;   
+
+        var user = await _userManager.Users.FirstOrDefaultAsync(
+            x => x.UserName == token.FindFirst("Id")!.Value
+        );
 
         if (user == null)
             return BadRequest();
@@ -217,7 +224,8 @@ public class AccountController : Controller
 
     private List<Claim> CreateClaims(IdentityUser user)
     {
-        List<Claim> claims = new() { new Claim(ClaimTypes.Name, user.UserName!) };
+        List<Claim> claims =
+            new() { new Claim(ClaimTypes.Name, user.UserName!), new Claim("Id", user.Id) };
 
         return claims;
     }
@@ -246,5 +254,39 @@ public class AccountController : Controller
 
         var accessToken = new JwtSecurityTokenHandler().WriteToken(jwtObject);
         return accessToken;
+    }
+
+    private ClaimsPrincipal GenratePrincipalFromToken(string token)
+    {
+        IdentityModelEventSource.ShowPII = true;
+
+        var tokenValidation = new TokenValidationParameters()
+        {
+            ValidateAudience = true,
+            ValidateIssuer = true,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(
+                System.Text.Encoding.UTF8.GetBytes(_configuration["JWT:SigningKey"]!)
+            ),
+            ValidateLifetime = true,
+        };
+
+        var tokenHandler = new JwtSecurityTokenHandler();
+        var principal = tokenHandler.ValidateToken(
+            token,
+            tokenValidation,
+            out SecurityToken securityToken
+        );
+
+        if (
+            securityToken is not JwtSecurityToken jwtSecurityToken
+            || !jwtSecurityToken.Header.Alg.Equals(
+                SecurityAlgorithms.HmacSha256,
+                StringComparison.InvariantCultureIgnoreCase
+            )
+        )
+            throw new SecurityTokenException("Invalid token");
+
+        return principal;
     }
 }

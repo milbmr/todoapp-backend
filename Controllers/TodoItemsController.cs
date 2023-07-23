@@ -10,81 +10,145 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Backend.DTO;
+using Microsoft.IdentityModel.Logging;
 
-namespace Backend.Controllers
+namespace Backend.Controllers;
+
+[Authorize]
+[ApiController]
+[Route("api/[controller]")]
+public class TodoItemsController : ControllerBase
 {
-    [Authorize]
-    [ApiController]
-    [Route("api/[controller]")]
-    public class TodoItemsController : ControllerBase
+    private readonly TodoContext context;
+    private readonly ILogger<TodoItemsController> _logger;
+    private readonly IConfiguration _configuration;
+    private readonly UserManager<TodoUser> _userManager;
+
+    private readonly SignInManager<TodoUser> _signInManager;
+
+    public TodoItemsController(
+        ILogger<TodoItemsController> logger,
+        TodoContext context,
+        IConfiguration configuration,
+        UserManager<TodoUser> userManager,
+        SignInManager<TodoUser> signInManager
+    )
     {
-        private readonly TodoContext context;
-        private readonly ILogger<TodoItemsController> _logger;
-        private readonly IConfiguration _configuration;
-        private readonly UserManager<TodoUser> _userManager;
+        this.context = context;
+        _configuration = configuration;
+        _userManager = userManager;
+        _signInManager = signInManager;
+        _logger = logger;
+    }
 
-        private readonly SignInManager<TodoUser> _signInManager;
+    [HttpGet("todos")]
+    public async Task<ActionResult<IEnumerable<TodoItem>>> GetTodoList()
+    {
+        var accessToken = Request.Headers["Authorization"]
+            .ToString()
+            .Replace("Bearer ", string.Empty);
+        if (accessToken == null || accessToken.Length == 0)
+            return BadRequest("Invalid todo fetch");
 
-        public TodoItemsController(
-            ILogger<TodoItemsController> logger,
-            TodoContext context,
-            IConfiguration configuration,
-            UserManager<TodoUser> userManager,
-            SignInManager<TodoUser> signInManager
-        )
+        var token = GenratePrincipalFromToken(accessToken!);
+
+        var todos = await _userManager.Users
+            .Where(x => x.Id == token.FindFirst("Id")!.Value)
+            .SelectMany(u => u.TodoItems!)
+            .Select(
+                t =>
+                    new TodoItemDto
+                    {
+                        Id = t.TodoItemId.ToString(),
+                        Todo = t.Todo,
+                        IsComplete = t.IsComplete
+                    }
+            )
+            .ToListAsync();
+
+        if (todos == null)
+            return BadRequest("no data");
+
+        return Ok(todos);
+    }
+
+    [HttpPost("todos")]
+    public async Task<ActionResult<long>> AddTodo(TodoItemDto todo)
+    {
+        var accessToken = Request.Headers["Authorization"]
+            .ToString()
+            .Replace("Bearer ", string.Empty);
+        if (accessToken == null || accessToken.Length == 0)
+            return BadRequest("Invalid todo fetch");
+
+        var token = GenratePrincipalFromToken(accessToken!);
+
+        var user = await _userManager.Users.FirstOrDefaultAsync(
+            x => x.Id == token.FindFirst("Id")!.Value
+        );
+
+        if (user == null)
+            return BadRequest("not existing user");
+
+        var item = new TodoItem()
         {
-            this.context = context;
-            _configuration = configuration;
-            _userManager = userManager;
-            _signInManager = signInManager;
-            _logger = logger;
-        }
+            Todo = todo.Todo,
+            IsComplete = todo.IsComplete,
+            TodoUserId = user.Id,
+            User = user
+        };
 
-        [HttpGet("todos")]
-        public async Task<ActionResult<IEnumerable<TodoItem>>> GetTodoList()
+        context.Todos.Add(item);
+        await context.SaveChangesAsync();
+
+        return item.TodoItemId;
+    }
+
+    [HttpDelete("todos/{id}")]
+    public async Task<ActionResult<long>> DeleteTodo(long id)
+    {
+        var todo = await context.Todos.FindAsync(id);
+
+        if (todo != null)
         {
-            if (!Request.Headers.TryGetValue("user", out var userName))
-                BadRequest("Invalid todo fetch");
-
-            var user = await _userManager.Users.FirstOrDefaultAsync(x => x.UserName == userName);
-            var todos = await context.Todos.Where(t => t.TodoUserId == user!.Id).ToListAsync();
-
-            if (user != null || todos != null)
-                BadRequest("no data");
-
-            return Ok(new {GetTodoList = user!.TodoItems});
-        }
-
-        [HttpPost("todos")]
-        public async Task<ActionResult<long>> AddTodo(TodoItemDto todo)
-        {
-            var user = await _userManager.Users.FirstOrDefaultAsync(x => x.Id == todo.Id);
-            var item = new TodoItem()
-            {
-                Todo = todo.Todo,
-                IsComplete = todo.IsComplete,
-                TodoUserId = todo.Id,
-                User = user!
-            };
-
-            context.Todos.Add(item);
+            context.Todos.Remove(todo);
             await context.SaveChangesAsync();
-
-            return item.TodoItemId;
         }
 
-        [HttpDelete("todos/{id}")]
-        public async Task<ActionResult<long>> DeleteTodo(long id)
+        return todo!.TodoItemId;
+    }
+
+    private ClaimsPrincipal GenratePrincipalFromToken(string token)
+    {
+        IdentityModelEventSource.ShowPII = true;
+        
+        var tokenValidation = new TokenValidationParameters()
         {
-            var todo = await context.Todos.FindAsync(id);
+            ValidateAudience = false,
+            ValidateIssuer = false,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(
+                System.Text.Encoding.UTF8.GetBytes(_configuration["JWT:SigningKey"]!)
+            ),
+            ValidateLifetime = true,
+        };
 
-            if (todo != null)
-            {
-                context.Todos.Remove(todo);
-                await context.SaveChangesAsync();
-            }
+        var tokenHandler = new JwtSecurityTokenHandler();
+        var principal = tokenHandler.ValidateToken(
+            token,
+            tokenValidation,
+            out SecurityToken securityToken
+        );
 
-            return todo!.TodoItemId;
-        }
+        if (
+            securityToken is not JwtSecurityToken jwtSecurityToken
+            || !jwtSecurityToken.Header.Alg.Equals(
+                SecurityAlgorithms.HmacSha256,
+                StringComparison.InvariantCultureIgnoreCase
+            )
+        )
+            throw new SecurityTokenException("Invalid token");
+
+        return principal;
     }
 }
