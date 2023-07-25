@@ -4,8 +4,11 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.AspNetCore.Identity;
 using System.Text.Json.Serialization;
+using Backend.Lib;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddScoped<Token>();
 
 builder.Services
     .AddControllers()

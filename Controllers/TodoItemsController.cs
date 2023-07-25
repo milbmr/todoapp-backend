@@ -1,16 +1,14 @@
 using Backend.Models;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using System.Linq.Expressions;
-using System.ComponentModel.DataAnnotations;
-using System.Diagnostics;
-using Microsoft.AspNetCore.Identity;
+using Backend.DTO;
+using System.Security.Claims;
+using Microsoft.IdentityModel.Logging;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Authorization;
-using Backend.DTO;
-using Microsoft.IdentityModel.Logging;
+using Microsoft.EntityFrameworkCore;
+using Backend.Lib;
 
 namespace Backend.Controllers;
 
@@ -20,25 +18,18 @@ namespace Backend.Controllers;
 public class TodoItemsController : ControllerBase
 {
     private readonly TodoContext context;
-    private readonly ILogger<TodoItemsController> _logger;
-    private readonly IConfiguration _configuration;
     private readonly UserManager<TodoUser> _userManager;
-
-    private readonly SignInManager<TodoUser> _signInManager;
+    private readonly Token _token;
 
     public TodoItemsController(
-        ILogger<TodoItemsController> logger,
         TodoContext context,
-        IConfiguration configuration,
         UserManager<TodoUser> userManager,
-        SignInManager<TodoUser> signInManager
+        Token token
     )
     {
         this.context = context;
-        _configuration = configuration;
         _userManager = userManager;
-        _signInManager = signInManager;
-        _logger = logger;
+        _token = token;
     }
 
     [HttpGet("todos")]
@@ -50,7 +41,7 @@ public class TodoItemsController : ControllerBase
         if (accessToken == null || accessToken.Length == 0)
             return BadRequest("Invalid todo fetch");
 
-        var token = GenratePrincipalFromToken(accessToken!);
+        var token = _token.GenratePrincipalFromToken(accessToken!);
 
         var todos = await _userManager.Users
             .Where(x => x.Id == token.FindFirst("Id")!.Value)
@@ -81,7 +72,7 @@ public class TodoItemsController : ControllerBase
         if (accessToken == null || accessToken.Length == 0)
             return BadRequest("Invalid todo fetch");
 
-        var token = GenratePrincipalFromToken(accessToken!);
+        var token = _token.GenratePrincipalFromToken(accessToken!);
 
         var user = await _userManager.Users.FirstOrDefaultAsync(
             x => x.Id == token.FindFirst("Id")!.Value
@@ -116,39 +107,5 @@ public class TodoItemsController : ControllerBase
         }
 
         return todo!.TodoItemId;
-    }
-
-    private ClaimsPrincipal GenratePrincipalFromToken(string token)
-    {
-        IdentityModelEventSource.ShowPII = true;
-        
-        var tokenValidation = new TokenValidationParameters()
-        {
-            ValidateAudience = false,
-            ValidateIssuer = false,
-            ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(
-                System.Text.Encoding.UTF8.GetBytes(_configuration["JWT:SigningKey"]!)
-            ),
-            ValidateLifetime = true,
-        };
-
-        var tokenHandler = new JwtSecurityTokenHandler();
-        var principal = tokenHandler.ValidateToken(
-            token,
-            tokenValidation,
-            out SecurityToken securityToken
-        );
-
-        if (
-            securityToken is not JwtSecurityToken jwtSecurityToken
-            || !jwtSecurityToken.Header.Alg.Equals(
-                SecurityAlgorithms.HmacSha256,
-                StringComparison.InvariantCultureIgnoreCase
-            )
-        )
-            throw new SecurityTokenException("Invalid token");
-
-        return principal;
     }
 }

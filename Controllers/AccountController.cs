@@ -12,6 +12,7 @@ using System.Security.Claims;
 using Backend.DTO;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Logging;
+using Backend.Lib;
 
 namespace Backend.Controllers;
 
@@ -20,25 +21,18 @@ namespace Backend.Controllers;
 public class AccountController : Controller
 {
     private readonly TodoContext context;
-    private readonly ILogger<TodoItemsController> _logger;
-    private readonly IConfiguration _configuration;
     private readonly UserManager<TodoUser> _userManager;
-
-    private readonly SignInManager<TodoUser> _signInManager;
+    private readonly Token _token;
 
     public AccountController(
-        ILogger<TodoItemsController> logger,
         TodoContext context,
-        IConfiguration configuration,
         UserManager<TodoUser> userManager,
-        SignInManager<TodoUser> signInManager
+        Token token
     )
     {
         this.context = context;
-        _configuration = configuration;
         _userManager = userManager;
-        _signInManager = signInManager;
-        _logger = logger;
+        _token = token;
     }
 
     [HttpPost]
@@ -48,19 +42,10 @@ public class AccountController : Controller
         {
             if (ModelState.IsValid)
             {
-                var newUser = new TodoUser
-                {
-                    UserName = input.UserName,
-                    Email = input.Email
-                };
+                var newUser = new TodoUser { UserName = input.UserName, Email = input.Email };
                 var result = await _userManager.CreateAsync(newUser, input.Password!);
                 if (result.Succeeded)
                 {
-                    _logger.LogInformation(
-                        "User {userName} ({email}) has been created.",
-                        newUser.UserName,
-                        newUser.Email
-                    );
                     return StatusCode(201, $"User '{newUser.UserName}' has been created.");
                 }
                 else
@@ -101,8 +86,8 @@ public class AccountController : Controller
                     throw new Exception("invalid login attempt");
                 else
                 {
-                    var accessToken = GenerateAccessToken(user);
-                    var refreshToken = GenerateRefreshToken();
+                    var accessToken = _token.GenerateAccessToken(user);
+                    var refreshToken = _token.GenerateRefreshToken();
 
                     user.RefreshToken = refreshToken;
                     user.RefreshTokenExpiryTime = DateTime.Now.AddSeconds(20);
@@ -122,7 +107,6 @@ public class AccountController : Controller
             }
             else
             {
-                Console.WriteLine("in auth");
                 var details = new ValidationProblemDetails(ModelState);
                 details.Status = StatusCodes.Status400BadRequest;
                 return new BadRequestObjectResult(details);
@@ -148,8 +132,6 @@ public class AccountController : Controller
 
         var user = await _userManager.Users.FirstOrDefaultAsync(x => x.UserName == userName);
 
-        Console.WriteLine("cookie token {0}", httpOnlyCookie);
-
         if (
             user == null
             || user.RefreshToken != httpOnlyCookie
@@ -157,15 +139,8 @@ public class AccountController : Controller
         )
             return BadRequest("invalid refresh request");
 
-        Console.WriteLine(
-            "refresh user {0}, refresh now {1}, user {2}",
-            user.RefreshToken != httpOnlyCookie,
-            user.RefreshTokenExpiryTime <= DateTime.Now,
-            user == null
-        );
-
-        var newAccessToken = GenerateAccessToken(user!);
-        var newRefreshToken = GenerateRefreshToken();
+        var newAccessToken = _token.GenerateAccessToken(user!);
+        var newRefreshToken = _token.GenerateRefreshToken();
 
         user!.RefreshToken = newRefreshToken;
 
@@ -189,9 +164,7 @@ public class AccountController : Controller
         if (accessToken == null || accessToken.Length == 0)
             return BadRequest("Invalid todo fetch");
 
-        Console.WriteLine("token mimi {0}", accessToken);
-
-        var token = GenratePrincipalFromToken(accessToken!);
+        var token = _token.GenratePrincipalFromToken(accessToken!);
 
         //var userId = User.FindFirst("Id")!.Value;
 
@@ -206,83 +179,5 @@ public class AccountController : Controller
         await _userManager.UpdateAsync(user);
 
         return NoContent();
-    }
-
-    private SigningCredentials CreateSigningCredentials()
-    {
-        return new SigningCredentials(
-            new SymmetricSecurityKey(
-                System.Text.Encoding.UTF8.GetBytes(_configuration["JWT:SigningKey"]!)
-            ),
-            SecurityAlgorithms.HmacSha256
-        );
-    }
-
-    private List<Claim> CreateClaims(IdentityUser user)
-    {
-        List<Claim> claims =
-            new() { new Claim(ClaimTypes.Name, user.UserName!), new Claim("Id", user.Id) };
-
-        return claims;
-    }
-
-    private string GenerateRefreshToken()
-    {
-        var randomNumber = new byte[32];
-        using var numGen = RandomNumberGenerator.Create();
-        numGen.GetBytes(randomNumber);
-        return Convert.ToBase64String(randomNumber);
-    }
-
-    private string GenerateAccessToken(IdentityUser user)
-    {
-        var signingCredentials = CreateSigningCredentials();
-
-        var claims = CreateClaims(user);
-
-        var jwtObject = new JwtSecurityToken(
-            issuer: _configuration["JWT:Issuer"],
-            audience: _configuration["JWT:Audience"],
-            claims: claims,
-            expires: DateTime.UtcNow.AddSeconds(30),
-            signingCredentials: signingCredentials
-        );
-
-        var accessToken = new JwtSecurityTokenHandler().WriteToken(jwtObject);
-        return accessToken;
-    }
-
-    private ClaimsPrincipal GenratePrincipalFromToken(string token)
-    {
-        IdentityModelEventSource.ShowPII = true;
-
-        var tokenValidation = new TokenValidationParameters()
-        {
-            ValidateAudience = true,
-            ValidateIssuer = true,
-            ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(
-                System.Text.Encoding.UTF8.GetBytes(_configuration["JWT:SigningKey"]!)
-            ),
-            ValidateLifetime = true,
-        };
-
-        var tokenHandler = new JwtSecurityTokenHandler();
-        var principal = tokenHandler.ValidateToken(
-            token,
-            tokenValidation,
-            out SecurityToken securityToken
-        );
-
-        if (
-            securityToken is not JwtSecurityToken jwtSecurityToken
-            || !jwtSecurityToken.Header.Alg.Equals(
-                SecurityAlgorithms.HmacSha256,
-                StringComparison.InvariantCultureIgnoreCase
-            )
-        )
-            throw new SecurityTokenException("Invalid token");
-
-        return principal;
     }
 }
